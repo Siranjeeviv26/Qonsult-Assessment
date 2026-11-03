@@ -3,7 +3,7 @@ const { z } = require('zod');
 const { Student, ClassSection } = require('../models');
 const { AppError, ok, parse, wrap } = require('../utils');
 
-/* ---------- validation ---------- */
+/*validation */
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
   .refine((s) => !Number.isNaN(Date.parse(s)), 'Invalid date');
@@ -23,7 +23,7 @@ const createSchema = z.object({
 const updateFields = createSchema.omit({ studentId: true }).partial().strict();
 const updateSchema = z.object({
   changes: updateFields.refine((o) => Object.keys(o).length > 0, 'Nothing to update'),
-  base: z.record(z.any()).default({}), // original values of the changed fields (for conflict detection)
+  base: z.record(z.any()).default({}),
 }).strict();
 
 const listSchema = z.object({
@@ -38,7 +38,6 @@ const listSchema = z.object({
   limit: z.coerce.number().int().refine((n) => [10, 20, 50, 100].includes(n), 'Invalid page size').default(20),
 });
 
-// Business rules that need the DB or cross-field checks.
 async function checkBusiness({ dob, admissionDate, classSectionId }) {
   const errors = [];
   const today = new Date().toISOString().slice(0, 10);
@@ -63,7 +62,7 @@ const withDerived = (d) => ({
 });
 const populateCs = { path: 'classSectionId', select: 'gradeName sectionName' };
 
-/* ---------- list (search / filter / sort / paginate) ---------- */
+/*  list (search / filter / sort / paginate) */
 const getAll = wrap(async (req, res) => {
   const q = parse(listSchema, req.query);
   const filter = {};
@@ -75,14 +74,13 @@ const getAll = wrap(async (req, res) => {
     if (q.admissionTo) filter.admissionDate.$lte = new Date(q.admissionTo);
   }
   if (q.search) {
-    // anchored, lowercase prefix match => can use the nameLower index
     const re = new RegExp('^' + escapeRe(q.search.toLowerCase()));
     filter.$or = [{ nameLower: re }, { emailLower: re }];
   }
   const sortField = q.sortBy === 'name' ? 'nameLower' : q.sortBy;
   const dir = q.sortOrder === 'asc' ? 1 : -1;
 
-  // fetch limit+1 to know if a next page exists (avoids an expensive count on huge collections)
+  // fetch
   const rows = await Student.find(filter)
     .sort({ [sortField]: dir, _id: dir })
     .skip((q.page - 1) * q.limit)
@@ -94,7 +92,7 @@ const getAll = wrap(async (req, res) => {
   ok(res, rows.slice(0, q.limit), 'Students retrieved successfully', 200, { page: q.page, limit: q.limit, hasNext });
 });
 
-/* ---------- get by id (authorization enforced here: no IDOR) ---------- */
+/*  get by id  */
 const getOne = wrap(async (req, res) => {
   const { id } = parse(z.object({ id: objectId }), req.params);
   if (req.user.role !== 'admin' && req.user.studentRef !== id) {
@@ -105,7 +103,7 @@ const getOne = wrap(async (req, res) => {
   ok(res, s, 'Student retrieved successfully');
 });
 
-/* ---------- create ---------- */
+/*  create  */
 const create = wrap(async (req, res) => {
   const data = parse(createSchema, req.body);
   await checkBusiness(data);
@@ -113,7 +111,7 @@ const create = wrap(async (req, res) => {
   ok(res, student, 'Student created successfully', 201);
 });
 
-/* ---------- partial update with field-level conflict detection ---------- */
+/* update   */
 const update = wrap(async (req, res) => {
   const { id } = parse(z.object({ id: objectId }), req.params);
   const { changes, base } = parse(updateSchema, req.body);
@@ -123,7 +121,6 @@ const update = wrap(async (req, res) => {
     const doc = await Student.findById(id).lean();
     if (!doc) throw new AppError(404, 'Student not found');
 
-    // Conflict only if someone else changed the SAME field to something different.
     const conflicts = keys.filter((k) => {
       const current = iso(doc[k]);
       return current !== iso(base[k]) && current !== changes[k];
@@ -136,11 +133,11 @@ const update = wrap(async (req, res) => {
     await checkBusiness({
       dob: changes.dob ?? iso(doc.dob),
       admissionDate: changes.admissionDate ?? iso(doc.admissionDate),
-      classSectionId: changes.classSectionId, // only re-check if being changed
+      classSectionId: changes.classSectionId,
     });
 
     const updated = await Student.findOneAndUpdate(
-      { _id: id, version: doc.version }, // version in the filter => atomic compare-and-set
+      { _id: id, version: doc.version }, 
       { $set: withDerived(changes), $inc: { version: 1 } },
       { new: true }
     ).select('-nameLower -emailLower').populate(populateCs);
@@ -149,7 +146,7 @@ const update = wrap(async (req, res) => {
   throw new AppError(409, 'Could not save because the record is being modified. Please retry.');
 });
 
-/* ---------- soft delete / deactivate ---------- */
+/*  soft delete / deactivate  */
 const remove = wrap(async (req, res) => {
   const { id } = parse(z.object({ id: objectId }), req.params);
   const s = await Student.findByIdAndUpdate(id, { $set: { status: 'Inactive' }, $inc: { version: 1 } }, { new: true });

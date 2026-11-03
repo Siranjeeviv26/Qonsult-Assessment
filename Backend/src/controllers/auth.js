@@ -6,7 +6,6 @@ const { User } = require('../models');
 const { AppError, ok, parse, wrap } = require('../utils');
 
 const schema = z.object({
-  // students (and admins) may sign in with their username or their email
   identifier: z.string().trim().min(1, 'Email or username is required').max(150),
   password: z.string().min(1, 'Password is required').max(200),
 });
@@ -19,7 +18,7 @@ const limiter = rateLimit({
   message: { success: false, message: 'Too many login attempts. Try again later.' },
 });
 
-const DUMMY = bcrypt.hashSync('dummy-password', 12); // equalises timing for unknown users
+const DUMMY = bcrypt.hashSync('dummy-password', 12);
 
 const login = wrap(async (req, res) => {
   const { identifier, password } = parse(schema, req.body);
