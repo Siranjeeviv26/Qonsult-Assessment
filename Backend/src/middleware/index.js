@@ -3,7 +3,7 @@ const { ZodError } = require('zod');
 const { AppError, wrap, logger } = require('../utils');
 const { IdempotencyKey } = require('../models');
 
-// Verifies the Bearer JWT and attaches the decoded payload to req.user.
+// Verifies the Bearer JWT
 const authenticate = (req, res, next) => {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -21,7 +21,7 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
 
-// Prevents duplicate processing when the same Idempotency-Key is replayed.
+// Prevents duplicate
 const idempotent = wrap(async (req, res, next) => {
   const key = req.get('Idempotency-Key');
   if (!key) return next();
@@ -39,7 +39,7 @@ const idempotent = wrap(async (req, res, next) => {
   const send = res.json.bind(res);
   res.json = (body) => {
     if (res.statusCode < 300) IdempotencyKey.updateOne({ _id: id }, { status: res.statusCode, body }).catch(() => {});
-    else IdempotencyKey.deleteOne({ _id: id }).catch(() => {}); // allow retry after fixing errors
+    else IdempotencyKey.deleteOne({ _id: id }).catch(() => {}); // allow retry 
     return send(body);
   };
   next();
@@ -47,8 +47,8 @@ const idempotent = wrap(async (req, res, next) => {
 
 const notFound = (req, res, next) => next(new AppError(404, 'Route not found'));
 
-// Central error handler: never leaks stack traces / DB internals.
-const errorHandler = (err, req, res, next) => { // eslint-disable-line
+// Central error handler
+const errorHandler = (err, req, res, next) => {
   let status = 500, message = 'Something went wrong. Please try again later.', errors;
   if (err instanceof AppError) ({ status, message, errors } = err);
   else if (err instanceof ZodError) { status = 422; message = 'Validation failed'; }
